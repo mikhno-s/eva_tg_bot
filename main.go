@@ -1,37 +1,90 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-ap"
+	"github.com/zelenin/go-tdlib/client"
 )
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("MyAwesomeBotToken")
+	// client authorizer
+	authorizer := client.ClientAuthorizer()
+	go client.CliInteractor(authorizer)
+
+	// or bot authorizer
+	// botToken := "000000000:gsVCGG5YbikxYHC7bP5vRvmBqJ7Xz6vG6td"
+	// authorizer := client.BotAuthorizer(botToken)
+	strAppID, _ := strconv.Atoi(os.Getenv("API_ID"))
+	apiID := int32(strAppID)
+	apiHash := os.Getenv("API_HASH")
+
+	authorizer.TdlibParameters <- &client.TdlibParameters{
+		UseTestDc:              false,
+		DatabaseDirectory:      filepath.Join(".tdlib", "database"),
+		FilesDirectory:         filepath.Join(".tdlib", "files"),
+		UseFileDatabase:        true,
+		UseChatInfoDatabase:    true,
+		UseMessageDatabase:     true,
+		UseSecretChats:         false,
+		ApiId:                  apiID,
+		ApiHash:                apiHash,
+		SystemLanguageCode:     "en",
+		DeviceModel:            "Server",
+		SystemVersion:          "1.0.0",
+		ApplicationVersion:     "1.0.0",
+		EnableStorageOptimizer: true,
+		IgnoreFileNames:        false,
+	}
+
+	logVerbosity := client.WithLogVerbosity(&client.SetLogVerbosityLevelRequest{
+		NewVerbosityLevel: 0,
+	})
+
+	tdlibClient, err := client.NewClient(authorizer, logVerbosity)
 	if err != nil {
-		log.Panic(err)
+		log.Fatalf("NewClient error: %s", err)
 	}
 
-	bot.Debug = true
-
-	log.Printf("Authorized on account %s", bot.Self.UserName)
-
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates, err := bot.GetUpdatesChan(u)
-
-	for update := range updates {
-		if update.Message == nil { // ignore any non-Message Updates
-			continue
-		}
-
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		msg.ReplyToMessageID = update.Message.MessageID
-
-		bot.Send(msg)
+	optionValue, err := tdlibClient.GetOption(&client.GetOptionRequest{
+		Name: "version",
+	})
+	if err != nil {
+		log.Fatalf("GetOption error: %s", err)
 	}
+
+	log.Printf("TDLib version: %s", optionValue.(*client.OptionValueString).Value)
+
+	me, err := tdlibClient.GetMe()
+	if err != nil {
+		log.Fatalf("GetMe error: %s", err)
+	}
+
+	log.Printf("Me: %s %s [%s]", me.FirstName, me.LastName, me.Username)
+
+	msgs, err := tdlibClient.GetChatHistory(&client.GetChatHistoryRequest{
+		ChatId: -1001492474397,
+		Limit:  10,
+	})
+
+	if err != nil {
+		log.Fatalf("GetChatHistory error: %s", err)
+	}
+
+	for _, m := range msgs.Messages {
+		fmt.Println(m.Content)
+	}
+
+	// listener := tdlibClient.GetListener()
+	// defer listener.Close()
+
+	// for update := range listener.Updates {
+	// 	if update.GetClass() == client.ClassUpdate {
+	// 		log.Printf("%#v", update)
+	// 	}
+	// }
 
 }
