@@ -32,7 +32,6 @@ func Start() {
 	}
 
 	// Create messages slice that can be used as in mem storage
-	messages := make([]*client.Message, 0)
 
 	// Read storage file
 	f, err := os.OpenFile(storageFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0755)
@@ -40,6 +39,8 @@ func Start() {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	messages := make([]*client.Message, 0)
+	messagesStack := make([]*client.Message, 0)
 
 	for scanner.Scan() {
 		m := client.Message{}
@@ -48,23 +49,39 @@ func Start() {
 		messages = append(messages, &m)
 	}
 
-	// Check if saved date is uptodate
-	lastSavedMessageID := messages[len(messages)-1].Id
-	if lastSavedMessageID != chat.LastMessage.Id {
-
-		// Should be append, because we want to save previous data. Append should perform in revert(?) orders (lifo)
-		messages = GetChanHistory(tdlibClient, chat.Id, 0, 0)
+	var lastSavedMessageID int64
+	if len(messages) != 0 {
+		lastSavedMessageID = messages[len(messages)-1].Id
 	}
 
+	if lastSavedMessageID != chat.LastMessage.Id {
+		// Should be append, because we want to save previous data. Append should perform in revert(?) orders (Fifo)
+		messagesStack = GetChanHistory(tdlibClient, chat.Id, lastSavedMessageID, 0)
+	}
+
+	for _, m := range messages {
+		fmt.Printf("%v ", m.Id)
+	}
+	fmt.Println()
+
+	for i := range messagesStack {
+		messages = append(messages, messagesStack[len(messagesStack)-i-1])
+	}
+
+	for _, m := range messages {
+		fmt.Printf("%v ", m.Id)
+	}
+	fmt.Println()
+	os.Exit(0)
 	// Create flushing data to file
 	// File must save data in log format (last messages - last in file)
-
 	for _, m := range messages {
 		marhMessage, err := m.MarshalJSON()
 		checkErrorFatal(err, "Printing messages")
 		fmt.Println(string(marhMessage))
 		f.WriteString(string(marhMessage) + "\n")
 	}
+	// 696254464
 
 }
 
@@ -79,7 +96,7 @@ func GetChanHistory(tdlibClient *client.Client, chatID int64, fromMessageID int6
 		chanHistory, err := tdlibClient.GetChatHistory(&client.GetChatHistoryRequest{
 			ChatId:        chatID,
 			Limit:         100,
-			OnlyLocal:     true,
+			OnlyLocal:     false,
 			FromMessageId: fromMessageID,
 		})
 		checkErrorFatal(err, "Getting chan history")
