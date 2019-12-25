@@ -11,7 +11,6 @@ import (
 )
 
 func Start() {
-
 	strAppID, _ := strconv.Atoi(os.Getenv("API_ID"))
 	apiID := int32(strAppID)
 	apiHash := os.Getenv("API_HASH")
