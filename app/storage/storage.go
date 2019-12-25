@@ -4,20 +4,17 @@ import (
 	"github.com/zelenin/go-tdlib/client"
 )
 
-type Row struct {
-	Row []byte
+type Storage interface {
+	Init() (err error)
+	Close() (err error)
+	ReadMessages() (messages []*client.Message, err error)
+	WriteMessages(messages []*client.Message) (err error)
 }
 
-type MessageRow interface {
-	GetRows() []*client.Message
-	GetRow(n int) *client.Message
+func InitStorage(storage Storage) (Storage, error) {
+	err := storage.Init()
+	if err != nil {
+		return nil, err
+	}
+	return storage, nil
 }
-
-type DBFile struct {
-	Path    string
-	Content []Row
-}
-
-// read
-
-// write

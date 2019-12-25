@@ -12,7 +12,7 @@ func GetChanHistory(tdlibClient *client.Client, chatID int64, fromMessageID int6
 	var totalMessages int
 
 	messagesSet := make(map[int]*client.Message)
-	totalLimit := 42
+	totalLimit := 99999999999
 
 	// Read first message (newest) separetely, because messageReading does not return exactly message - fromMessageId
 	if fromMessageID != 0 {

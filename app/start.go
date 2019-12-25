@@ -1,13 +1,12 @@
 package app
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
-	"github.com/mikhno-s/eva_tg_bot/app/scheme"
+	"github.com/mikhno-s/eva_tg_bot/app/storage"
 	"github.com/zelenin/go-tdlib/client"
 )
 
@@ -17,7 +16,7 @@ func Start() {
 	apiID := int32(strAppID)
 	apiHash := os.Getenv("API_HASH")
 	publicChannelUsername := os.Getenv("CHAN_NAME")
-	storageFile := os.Getenv("STORAGE_FILE")
+	storageFilePath := os.Getenv("STORAGE_FILE")
 
 	tdlibClient, err := createTdlibClient(apiID, apiHash)
 
@@ -26,60 +25,50 @@ func Start() {
 	chat, err := tdlibClient.SearchPublicChat(&client.SearchPublicChatRequest{
 		Username: publicChannelUsername,
 	})
-
 	checkErrorFatal(err, "Searching public channel")
 	if chat == nil {
 		checkErrorFatal(fmt.Errorf("Cannot find %s", publicChannelUsername), "Searching public channel")
 	}
 
-	// Read storage file
-	f, err := os.OpenFile(storageFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0755)
-	checkErrorFatal(err, "Opening file")
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
+	storage, err := storage.InitStorage(&storage.DBFile{
+		Path: storageFilePath,
+	})
+	checkErrorFatal(err, "File initialization")
 
-	fStat, err := f.Stat()
-	checkErrorFatal(err, "Reading file size")
+	defer storage.Close()
 
-	messages := make([]*client.Message, 0)
-
-	if fStat.Size() > 0 {
-		for scanner.Scan() {
-			m := client.Message{}
-			err := json.Unmarshal(scanner.Bytes(), &m)
-			checkErrorFatal(err, "Reading file")
-			messages = append(messages, &m)
-		}
-	}
+	messages, err := storage.ReadMessages()
 
 	var lastSavedMessageID int64
 
-	if len(messages) != 0 {
-		lastSavedMessageID = messages[len(messages)-1].Id
+	// Fill storage if it's empty
+	if len(messages) == 0 {
+		messages = GetChanHistory(tdlibClient, chat.Id, chat.LastMessage.Id, 0)
+		err = storage.WriteMessages(messages)
+		checkErrorFatal(err, "Writing messages to file")
 	}
 
-	// If chat has newer messages or we don't have saved messages at all
-	if chat.LastMessage.Id != lastSavedMessageID {
-		fmt.Println(chat.LastMessage.Id, lastSavedMessageID)
-		for _, m := range GetChanHistory(tdlibClient, chat.Id, chat.LastMessage.Id, lastSavedMessageID) {
+	lastSavedMessageID = messages[len(messages)-1].Id
 
-			// Append to saved state
-			marhMessage, err := m.MarshalJSON()
-			checkErrorFatal(err, "Printing messages")
-			f.WriteString(string(marhMessage) + "\n")
+	tickTenSeconds := time.NewTicker(time.Second * 10)
+	for {
+		select {
+		case <-tickTenSeconds.C:
+			// Check for a new message every 10 second
+			lastMessageInChan, err := tdlibClient.GetChatMessageByDate(&client.GetChatMessageByDateRequest{
+				ChatId: chat.Id,
+				Date:   int32(time.Now().UTC().Unix()),
+			})
+			checkErrorFatal(err, "Getting messages count")
+			if lastMessageInChan.Id != lastSavedMessageID {
+				newMessages := GetChanHistory(tdlibClient, chat.Id, lastMessageInChan.Id, lastSavedMessageID)
+				for _, m := range newMessages {
+					messages = append(messages, m)
+				}
+				storage.WriteMessages(newMessages)
+				lastSavedMessageID = messages[len(messages)-1].Id
+			}
 
-			// Append to memory state
-			messages = append(messages, m)
 		}
 	}
-
-	for _, m := range messages {
-		e := scheme.MessageContentEntry{}
-		mBytes, err := m.MarshalJSON()
-		checkErrorFatal(err, "Json marshalling err")
-		err = json.Unmarshal(mBytes, &e)
-		checkErrorFatal(err, "Json unmarshaling")
-		fmt.Println(e.Content.Text.Text)
-	}
-
 }
