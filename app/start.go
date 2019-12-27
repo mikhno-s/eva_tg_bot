@@ -15,7 +15,7 @@ func Start() {
 	apiID := int32(strAppID)
 	apiHash := os.Getenv("API_HASH")
 	publicChannelUsername := os.Getenv("CHAN_NAME")
-	storageFilePath := os.Getenv("STORAGE_FILE")
+	storageFilePath := os.Getenv("MESSAGE_STORAGE_FILE")
 
 	tdlibClient, err := createTdlibClient(apiID, apiHash)
 

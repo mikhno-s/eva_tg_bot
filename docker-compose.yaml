@@ -1,0 +1,26 @@
+
+version: "3"
+services:
+  postgres:
+    restart: always
+    container_name: postgres
+    image: sameersbn/postgresql:10-2
+    expose: 
+      - "5432"
+    ports:
+      - "5432:5432"
+    environment:
+      - DEBUG=false
+      - DB_USER=admin
+      - DB_PASS=admin
+      - DB_NAME=cars
+    volumes:
+      - ./data/postgres:/var/lib/postgresql
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes: 
+      - ./data/grafana:/var/lib/grafana
