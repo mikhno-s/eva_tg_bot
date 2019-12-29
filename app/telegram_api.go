@@ -19,7 +19,7 @@ func GetChanHistory(tdlibClient *client.Client, chatID int64, fromMessageID int6
 	// Read first message (newest) separetely, because messageReading does not return exactly message - fromMessageId
 	if fromMessageID != 0 {
 		lastMessage, err := tdlibClient.GetMessage(&client.GetMessageRequest{ChatId: chatID, MessageId: fromMessageID})
-		checkErrorFatal(err, "Getting chan history")
+		checkError(err, "Getting chan history")
 		messagesSet[int(lastMessage.Id)] = lastMessage
 	}
 messageReading:
@@ -31,7 +31,7 @@ messageReading:
 			OnlyLocal:     false,
 			FromMessageId: fromMessageID,
 		})
-		checkErrorFatal(err, "Getting chan history")
+		checkError(err, "Getting chan history")
 		if chanHistory.TotalCount == 0 {
 			break
 		}

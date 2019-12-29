@@ -7,21 +7,20 @@ import (
 	"syscall"
 
 	"github.com/mikhno-s/eva_tg_bot/app"
-	"github.com/mikhno-s/eva_tg_bot/transformer"
 )
 
 func main() {
 	sigs := make(chan os.Signal, 1)
+	done := make(chan bool)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	go app.Start()
-	proc := &transformer.EvacuationCarsLogProcessor{}
-	go proc.Start()
+	go app.Start(done)
 
 	for {
 		select {
 		case <-sigs:
 			fmt.Println("Done")
+			close(done)
 			os.Exit(0)
 		}
 	}

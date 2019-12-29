@@ -1,11 +1,14 @@
 package app
 
 import (
-	"log"
+	"fmt"
+	"runtime"
 )
 
-func checkErrorFatal(err error, cause string) {
+func checkError(err error, cause string) {
+	_, file, line, _ := runtime.Caller(1)
 	if err != nil {
-		log.Fatalf("%s:\n%s", cause, err.Error())
+		fmt.Printf("%s:\n%s:%d - %s\n", cause, file, line, err.Error())
 	}
+
 }
