@@ -97,6 +97,7 @@ updatesLoop:
 
 			if lastMessageInChan.Id > lastSavedMessageID {
 				messages := GetChanHistory(tdlibClient, chat.Id, lastMessageInChan.Id, lastSavedMessageID)
+				cars := make([]*scheme.Car, 0)
 				log.Println("Reading", len(messages), "messages")
 				for _, m := range messages {
 					e := scheme.MessageContentEntry{}
