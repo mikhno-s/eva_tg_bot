@@ -117,10 +117,7 @@ updatesLoop:
 				if err != nil {
 					checkError(err, "Inserting data to storage")
 				}
-				lastSavedMessageID, err = db.getLastReadedMessageID(chat.Id)
-				if err != nil {
-					checkError(err, "Getting last saved messaged id")
-				}
+
 				db.SetLastReadedMessageID(chat.Id, strconv.Itoa(int(messages[len(messages)-1].Id)))
 			}
 		case <-done:
