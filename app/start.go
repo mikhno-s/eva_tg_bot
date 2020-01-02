@@ -6,51 +6,84 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/mikhno-s/eva_tg_bot/app/scheme"
 	"github.com/zelenin/go-tdlib/client"
 )
 
-// Start is start
-func Start(done <-chan bool) {
+type App struct {
+	config struct {
+		APIID    int32
+		APIHash  string
+		ChanName string
+		DbURL    string
+	}
+	stopChan    chan bool
+	db          carsDB
+	tdlibClient *client.Client
+	chat        *client.Chat
+	wg          sync.WaitGroup
+}
+
+func (app *App) Stop() {
+	close(app.stopChan)
+	app.wg.Wait()
+	app.db.Close()
+}
+
+func (app *App) Init() {
+	app.wg.Add(1)
+	var err error
+
+	app.stopChan = make(chan bool)
+
 	strAppID, _ := strconv.Atoi(os.Getenv("API_ID"))
-	apiID := int32(strAppID)
-	apiHash := os.Getenv("API_HASH")
-	publicChannelUsername := os.Getenv("CHAN_NAME")
-	dbConnString := os.Getenv("DB_CONN")
+	app.config.APIID = int32(strAppID)
+	app.config.APIHash = os.Getenv("API_HASH")
+	app.config.ChanName = os.Getenv("CHAN_NAME")
+	app.config.DbURL = os.Getenv("DB_CONN")
 
-	tdlibClient, err := createTdlibClient(apiID, apiHash)
-
+	app.tdlibClient, err = createTdlibClient(app.config.APIID, app.config.APIHash)
 	checkError(err, "Creating telegram client")
 
-	chat, err := tdlibClient.SearchPublicChat(&client.SearchPublicChatRequest{
-		Username: publicChannelUsername,
+	app.chat, err = app.tdlibClient.SearchPublicChat(&client.SearchPublicChatRequest{
+		Username: app.config.ChanName,
 	})
 	checkError(err, "Searching public channel")
-	if chat == nil {
-		checkError(fmt.Errorf("Cannot find %s", publicChannelUsername), "Searching public channel")
+	if app.chat == nil {
+		checkError(fmt.Errorf("Cannot find %s", app.config.ChanName), "Searching public channel")
 	}
+	app.wg.Done()
 
-	db := &carsDB{
-		ConnString: dbConnString}
+	app.db = carsDB{
+		ConnString: app.config.DbURL}
 
-	err = db.Init()
+	err = app.db.Init()
 	if err != nil {
 		checkError(err, "DB initialization")
 	}
-	defer db.Close()
+
+}
+
+// Start is start
+func (app *App) Start() {
+	app.wg = sync.WaitGroup{}
+	app.wg.Add(1)
+	app.Init()
+	log.Println("App started")
 
 	// Creating tables
-	db.Conn.MustExec(scheme.GetEvacuatedTableScheme())
-	db.Conn.MustExec(scheme.GetTelegramLastChatMessagesTableScheme())
+	app.db.Conn.MustExec(scheme.GetEvacuatedTableScheme())
+	app.db.Conn.MustExec(scheme.GetTelegramLastChatMessagesTableScheme())
 
-	cars, err := db.getAllCars()
+	cars, err := app.db.getAllCars()
 	checkError(err, "Getting data from storage")
 
 	// Fill storage if it's empty
 	if len(cars) == 0 {
-		messages := GetChanHistory(tdlibClient, chat.Id, chat.LastMessage.Id, 0)
+		messages := GetChanHistory(app.tdlibClient, app.chat.Id, app.chat.LastMessage.Id, 0)
 		log.Println("Reading", len(messages), "messages")
 		for _, m := range messages {
 			e := scheme.MessageContentEntry{}
@@ -66,10 +99,10 @@ func Start(done <-chan bool) {
 			}
 		}
 
-		db.SetLastReadedMessageID(chat.Id, strconv.Itoa(int(messages[len(messages)-1].Id)))
+		app.db.SetLastReadedMessageID(app.chat.Id, strconv.Itoa(int(messages[len(messages)-1].Id)))
 
 		log.Println("Got", len(cars), "new cars")
-		err = db.insertEvacuatedCars(cars)
+		err = app.db.insertEvacuatedCars(cars)
 		if err != nil {
 			checkError(err, "Inserting data to storage")
 		}
@@ -83,20 +116,20 @@ updatesLoop:
 		select {
 		case <-tickTenSeconds.C:
 			// Check for a new message every 10 second
-			lastMessageInChan, err := tdlibClient.GetChatMessageByDate(&client.GetChatMessageByDateRequest{
-				ChatId: chat.Id,
+			lastMessageInChan, err := app.tdlibClient.GetChatMessageByDate(&client.GetChatMessageByDateRequest{
+				ChatId: app.chat.Id,
 				Date:   int32(time.Now().UTC().Unix()),
 			})
 			checkError(err, "Getting messages count")
 
 			// Get last saved message
-			lastSavedMessageID, err := db.getLastReadedMessageID(chat.Id)
+			lastSavedMessageID, err := app.db.getLastReadedMessageID(app.chat.Id)
 			if err != nil {
 				checkError(err, "Getting last saved messaged id")
 			}
 
 			if lastMessageInChan.Id > lastSavedMessageID {
-				messages := GetChanHistory(tdlibClient, chat.Id, lastMessageInChan.Id, lastSavedMessageID)
+				messages := GetChanHistory(app.tdlibClient, app.chat.Id, lastMessageInChan.Id, lastSavedMessageID)
 				cars := make([]*scheme.Car, 0)
 				log.Println("Reading", len(messages), "messages")
 				for _, m := range messages {
@@ -113,16 +146,16 @@ updatesLoop:
 					}
 				}
 				log.Println("Got", len(cars), "new cars")
-				err = db.insertEvacuatedCars(cars)
+				err = app.db.insertEvacuatedCars(cars)
 				if err != nil {
 					checkError(err, "Inserting data to storage")
 				}
 
-				db.SetLastReadedMessageID(chat.Id, strconv.Itoa(int(messages[len(messages)-1].Id)))
+				app.db.SetLastReadedMessageID(app.chat.Id, strconv.Itoa(int(messages[len(messages)-1].Id)))
 			}
-		case <-done:
+		case <-app.stopChan:
+			app.wg.Done()
 			break updatesLoop
-
 		}
 	}
 

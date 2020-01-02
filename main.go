@@ -11,16 +11,17 @@ import (
 
 func main() {
 	sigs := make(chan os.Signal, 1)
-	done := make(chan bool)
+
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	go app.Start(done)
+	app := app.App{}
+	go app.Start()
 
 	for {
 		select {
 		case <-sigs:
 			fmt.Println("Done")
-			close(done)
+			app.Stop()
 			os.Exit(0)
 		}
 	}
